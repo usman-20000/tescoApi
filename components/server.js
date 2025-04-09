@@ -1,6 +1,7 @@
 require('./conn');
 const express = require('express');
 const mongoose = require('mongoose');
+const nodemailer = require('nodemailer');
 const Register = require('../components/register');
 const app = express();
 const http = require('http');
@@ -22,7 +23,7 @@ app.use(cors());
 const generateUniqueId = async () => {
   try {
     const date = new Date();
-    const dateString = date.toISOString().slice(2, 10).replace(/-/g, ''); 
+    const dateString = date.toISOString().slice(2, 10).replace(/-/g, '');
 
     let count = 1; // Start with count 1
     let uniqueId = `${dateString}${count}`; // Initial generated ID
@@ -41,6 +42,89 @@ const generateUniqueId = async () => {
   }
 };
 
+
+// Create a POST route to send OTP
+app.post('/send-otp', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+
+  const otp = generateOTP();
+
+  let transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+
+      user: 'btwnetwork6@gmail.com',
+      pass: 'zuyf oeml klcq ehyc',
+    },
+  });
+
+  // Email options
+  const mailOptions = {
+    from: 'btwnetwork6@gmail.com',
+    to: email,
+    subject: 'Your OTP Code',
+    html: `
+    <div style="background-color: #f4f4f4; padding: 20px; text-align: center; font-family: Arial, sans-serif;">
+      <div style="background-color: #ffffff; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <h2 style="color: #333;">Your OTP Code</h2>
+        <p style="font-size: 18px; color: #555;">Use the following OTP to verify your email:</p>
+        <p style="font-size: 24px; font-weight: bold; color: #d9534f; background-color: #f8d7da; padding: 10px; display: inline-block; border-radius: 5px;">
+          ${otp}
+        </p>
+        <p style="color: #777; font-size: 14px;">This OTP is valid for only 10 minutes.</p>
+        <p style="color: #999; font-size: 12px;">If you didn’t request this, please ignore this email.</p>
+      </div>
+    </div>
+  `
+  };
+
+  try {
+    // Send email
+    await transporter.sendMail(mailOptions);
+    res.status(200).json({ message: 'OTP sent successfully', otp });
+  } catch (error) {
+    res.status(500).json({ message: 'Error sending email', error });
+  }
+});
+
+
+app.post('/send-email', async (req, res) => {
+  const { email, text, subject } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+
+  // Configure the Nodemailer transporter
+  let transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: 'btwnetwork6@gmail.com',
+      pass: 'zuyf oeml klcq ehyc',
+    },
+  });
+
+  // Email options
+  const mailOptions = {
+
+    from: email,
+    to: 'btwnetwork6@gmail.com',
+    subject: subject,
+    text: text,
+  };
+
+  try {
+    // Send email
+    await transporter.sendMail(mailOptions);
+    res.status(200).json({ message: 'email sent successfully' }); // You might want to store OTP in the database or session
+  } catch (error) {
+    res.status(500).json({ message: 'Error sending email', error });
+  }
+});
 
 app.post("/register", async (req, res) => {
   const session = await mongoose.startSession();
@@ -97,9 +181,35 @@ app.post("/register", async (req, res) => {
     console.error("Error during registration:", e);
     res.status(500).json({ msg: "Server error. Please try again later." });
   } finally {
-    session.endSession(); 
+    session.endSession();
   }
 });
+
+app.patch("/register/:email", async (req, res) => {
+  try {
+    const { email } = req.params;
+    let updateData = req.body;
+
+    if (updateData.password) {
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(updateData.password, saltRounds);
+      updateData.password = hashedPassword;
+    }
+
+    const updatedUser = await Register.findOneAndUpdate({ email }, updateData, {
+      new: true,
+    });
+
+    if (!updatedUser) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    res.send(updatedUser);
+  } catch (e) {
+    res.status(400).send({ message: "Error updating user", error: e });
+  }
+});
+
 
 app.post('/login', async (req, res) => {
   try {
@@ -205,6 +315,7 @@ app.get('/add/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const add = await Add.findById(id);
+
     if (!add) {
       return res.status(404).json({ error: 'Add not found' });
     }
