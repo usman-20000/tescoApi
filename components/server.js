@@ -57,14 +57,14 @@ app.post('/send-otp', async (req, res) => {
     service: 'gmail',
     auth: {
 
-      user: 'btwnetwork6@gmail.com',
-      pass: 'zuyf oeml klcq ehyc',
+      user: 'usmanaliiali125@gmail.com',
+      pass: 'vgdw keud yepu xcqf',
     },
   });
 
   // Email options
   const mailOptions = {
-    from: 'btwnetwork6@gmail.com',
+    from: 'usmanaliiali125@gmail.com',
     to: email,
     subject: 'Your OTP Code',
     html: `
