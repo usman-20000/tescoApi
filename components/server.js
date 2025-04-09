@@ -42,6 +42,9 @@ const generateUniqueId = async () => {
   }
 };
 
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 9000); // 6-digit OTP
+};
 
 // Create a POST route to send OTP
 app.post('/send-otp', async (req, res) => {
