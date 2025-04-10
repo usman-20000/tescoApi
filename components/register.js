@@ -21,6 +21,26 @@ const registerSchema = new mongoose.Schema({
   referalCode: {
     type: String,
   },
+  deposit: {
+    type: Number,
+    default: 0
+  },
+  balance: {
+    type: Number,
+    default: 0
+  },
+  totalDeposit: {
+    type: Number,
+    default: 0
+  },
+  totalInvest: {
+    type: Number,
+    default: 0
+  },
+  totalWithdraw: {
+    type: Number,
+    default: 0
+  }
 });
 
 const Register = mongoose.model('Register', registerSchema);
