@@ -15,6 +15,7 @@ const listing = require('./listing');
 const Chat = require('./chat');
 const MyPlan = require('./MyPlan');
 const { timeDifference } = require('./Data');
+const ScreenShot = require('./Screenshot');
 
 const PORT = process.env.PORT || 4000;
 
@@ -538,7 +539,7 @@ app.patch("/myplan/:id", async (req, res) => {
       { new: true });
 
     if (!updatedPlan) {
-      return res.status(404).send({ message: "User not found" });
+      return res.status(404).send({ message: "Error update plan" });
     }
 
     res.send(updatedPlan);
@@ -546,6 +547,69 @@ app.patch("/myplan/:id", async (req, res) => {
     res.status(400).send({ message: "Error updating user", error: e.message });
   }
 });
+
+app.patch("/dailyclaim/:id", async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const id = req.params.id;
+    const { planId } = req.body;
+    const date = new Date();
+
+    const user = await Register.findById(id).session(session);
+    if (!user) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    const plan = await MyPlan.findById(planId).session(session);
+    if (!plan) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).send({ message: "Plan not found" });
+    }
+
+    await Register.findByIdAndUpdate(
+      id,
+      { $inc: { balance: plan.dailyProfit } },
+      { new: true, session }
+    );
+
+    if (date >= plan.endDate) {
+      await Register.findByIdAndUpdate(
+        id,
+        { $inc: { balance: plan.investment } },
+        { new: true, session }
+      );
+
+      await MyPlan.findByIdAndUpdate(
+        planId,
+        { status: 'complete' },
+        { new: true, session }
+      );
+    } else {
+      await MyPlan.findByIdAndUpdate(
+        planId,
+        { status: 'pending', lastClaim: date },
+        { new: true, session }
+      );
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+
+    res.send({ message: 'Daily claim updated successfully' });
+
+  } catch (e) {
+    await session.abortTransaction();
+    session.endSession();
+    res.status(400).send({ message: "Error updating user", error: e.message });
+  }
+});
+
+
 
 app.get('/myplan/:id', async (req, res) => {
   try {
@@ -572,6 +636,90 @@ app.get('/myplan/:id', async (req, res) => {
   }
 });
 
+app.post('/screenshot', async (req, res) => {
+  try {
+    const screenshot = new ScreenShot(req.body);
+    await screenshot.save();
+    res.json(screenshot);
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating notification' });
+  }
+});
+
+app.get('/screenshot', async (req, res) => {
+  try {
+    const screenshot = await ScreenShot.find().sort({ _id: -1 });
+    res.json(screenshot);
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating notification' });
+  }
+});
+
+app.patch("/verifyscreenshot/:id", async (req, res) => {
+  const session = await Register.startSession();
+  session.startTransaction();
+
+  try {
+    const id = req.params.id;
+    const { amount, screenshotId } = req.body;
+
+    const user = await Register.findById(id).session(session);
+    if (!user) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    await ScreenShot.findByIdAndUpdate(
+      screenshotId,
+      { verify: true },
+      { new: true, session }
+    );
+
+    await Register.findByIdAndUpdate(
+      id,
+      { $inc: { deposit: amount, totalDeposit: amount } },
+      { new: true, session }
+    );
+
+    let level1, level2, level3;
+    if (user.referalCode) {
+      // Level 1 (8%)
+      level1 = await Register.findOneAndUpdate(
+        { generatedId: user.referalCode },
+        { $inc: { balance: amount * 8 / 100 } },
+        { new: true, session }
+      );
+
+      // Level 2 (3%)
+      if (level1?.referalCode) {
+        level2 = await Register.findOneAndUpdate(
+          { generatedId: level1.referalCode },
+          { $inc: { balance: amount * 3 / 100 } },
+          { new: true, session }
+        );
+      }
+
+      // Level 3 (1%)
+      if (level2?.referalCode) {
+        level3 = await Register.findOneAndUpdate(
+          { generatedId: level2.referalCode },
+          { $inc: { balance: amount * 1 / 100 } },
+          { new: true, session }
+        );
+      }
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+    res.status(200).send({ message: "Deposit and referrals updated successfully" });
+
+  } catch (e) {
+    await session.abortTransaction();
+    session.endSession();
+    res.status(400).send({ message: "Error updating user", error: e.message });
+  }
+});
 
 
 app.listen(PORT, () => {
