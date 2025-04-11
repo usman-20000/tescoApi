@@ -13,7 +13,7 @@ const Bill = require('./bill');
 const Notification = require('./Notification');
 const listing = require('./listing');
 const Chat = require('./chat');
-const MyPlan = require('./myplan');
+const MyPlan = require('./MyPlan');
 const { timeDifference } = require('./Data');
 
 const PORT = process.env.PORT || 4000;
