@@ -13,6 +13,8 @@ const Bill = require('./bill');
 const Notification = require('./Notification');
 const listing = require('./listing');
 const Chat = require('./chat');
+const MyPlan = require('./myplan');
+const { timeDifference } = require('./Data');
 
 const PORT = process.env.PORT || 4000;
 
@@ -475,220 +477,102 @@ app.delete('/notifications/:id', async (req, res) => {
   }
 });
 
-app.post('/listing', async (req, res) => {
+app.post('/addPlan/:id', async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
-    const { userId } = req.body;
+    session.startTransaction();
 
-    const user = await Register.findById(userId);
+    const id = req.params.id;
+    const { planId, investment, days, dailyProfit, endDate } = req.body;
 
+    const user = await Register.findById(id).session(session);
     if (!user) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (user.status !== "Active") {
-      return res.status(403).json({ message: 'User not approved' });
+    if (user.deposit < investment) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: 'Not enough balance' });
     }
 
-    const account = new listing(req.body);
-    await account.save();
-    res.status(201).json(account);
+    await Register.findByIdAndUpdate(
+      id,
+      { $inc: { totalInvest: investment, deposit: -investment } },
+      { new: true, session }
+    );
 
-  } catch (error) {
-    console.error("Error in /listing:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-});
-
-
-app.get('/listing', async (req, res) => {
-  try {
-    const account = await listing.find();
-    res.json(account);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-app.get('/listing/edit/:id', async (req, res) => {
-  try {
-    const id = req.params.id;
-    if (!id) {
-      return res.status(400).json({ message: 'ID is required' });
-    }
-
-    const account = await listing.findById(id);
-    if (!account) {
-      return res.status(404).json({ message: 'Listing not found' });
-    }
-
-    res.json(account);
-  } catch (error) {
-    console.error("Error fetching listing:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-});
-
-
-app.get('/listing/:userId', async (req, res) => {
-  try {
-    const account = await listing.find({ userId: req.params.userId });
-    res.json(account);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-app.get('/singleListing/:id', async (req, res) => {
-  try {
-    const account = await listing.findById(req.params.id);
-    if (!account) {
-      return res.status(404).json({ message: "Listing not found" });
-    }
-    res.json(account);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-
-
-
-app.patch('/listing/:id', async (req, res) => {
-  try {
-    const id = req.params.id;
-    if (!id) {
-      return res.status(400).send("ID is required");
-    }
-    const account = await listing.findByIdAndUpdate(id, req.body, { new: true });
-    if (!account) {
-      return res.status(404).send("Data not found");
-    }
-    res.send(account);
-  } catch (e) {
-    console.error(e);
-    res.status(500).send("Internal Server Error");
-  }
-});
-
-app.delete('/listing/:id', async (req, res) => {
-  try {
-    const account = await listing.findByIdAndDelete(req.params.id);
-    if (!account) {
-      return res.status(404).send("Data not found");
-    }
-    if (!req.params.id) {
-      res.status(201).send();
-    }
-  } catch (e) {
-    res.status(400).send(e);
-  }
-});
-
-
-app.post('/chat', async (req, res) => {
-  try {
-    const { senderId, receiverId, listId, senderName, receiverName, text } = req.body;
-
-    if (!senderId || !receiverId || !senderName || !receiverName || !text) {
-      return res.status(400).json({ message: 'All fields are required' });
-    }
-
-    const newChat = new Chat({
-      senderId,
-      receiverId,
-      listId,
-      senderName,
-      receiverName,
-      text
+    const newPlan = new MyPlan({
+      planId,
+      userId: id,
+      investment,
+      days,
+      dailyProfit,
+      endDate,
     });
 
-    await newChat.save();
-    res.status(201).json(newChat);
+    await newPlan.save({ session });
 
+    await session.commitTransaction();
+    session.endSession();
+
+    res.json(newPlan);
   } catch (error) {
-    console.error("Error in Chat:", error);
-    res.status(500).json({ message: "Internal Server Error" });
+    await session.abortTransaction();
+    session.endSession();
+    console.error('Transaction error:', error);
+    res.status(500).json({ message: 'Error creating plan' });
   }
 });
 
-
-
-app.post('/singlechat/:receiverId', async (req, res) => {
+app.patch("/myplan/:id", async (req, res) => {
   try {
+    const id = req.params.id;
+    let updateData = req.body;
 
-    const receiverId = req.params.receiverId;
-    const senderId = req.body.senderId;
+    const updatedPlan = await MyPlan.findByIdAndUpdate(id,
+      updateData,
+      { new: true });
 
-    const findChat = await Chat.find({
-      $or: [
-        { senderId: senderId, receiverId: receiverId },
-        { senderId: receiverId, receiverId: senderId }
-      ]
-    })
-    res.status(200).json(findChat);
-
-  } catch (error) {
-    console.error("Error in Chat:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-});
-
-app.get('/chatList/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const chatList = await Chat.aggregate([
-      {
-        $match: {
-          $or: [
-            { senderId: userId },
-            { receiverId: userId }
-          ]
-        }
-      },
-      {
-        $sort: { createdAt: -1 }
-      },
-      {
-        $group: {
-          _id: {
-            $cond: [
-              { $eq: ["$senderId", userId] },
-              "$receiverId",
-              "$senderId"
-            ]
-          },
-          latestChat: { $first: "$$ROOT" }
-        }
-      },
-      {
-        $replaceRoot: { newRoot: "$latestChat" }
-      },
-      {
-        $sort: { createdAt: -1 }
-      }
-    ]);
-
-    res.status(200).json(chatList);
-  } catch (error) {
-    console.error("Error in getting Chat:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-});
-
-app.delete('/chat/:id', async (req, res) => {
-  try {
-    const account = await Chat.findById(req.params.id);
-    if (!account) {
-      return res.status(404).send("Chat not found");
+    if (!updatedPlan) {
+      return res.status(404).send({ message: "User not found" });
     }
-    if (!req.params.id) {
-      res.status(201).send();
-    }
+
+    res.send(updatedPlan);
   } catch (e) {
-    res.status(400).send(e);
+    res.status(400).send({ message: "Error updating user", error: e.message });
   }
 });
+
+app.get('/myplan/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const plan = await MyPlan.find({ userId: id }).sort({ _id: -1 });
+    const date = new Date();
+
+    const updatePromises = plan.map(async (item) => {
+      if (item.status === 'pending' && timeDifference(item.lastClaim) === 'ready') {
+        await MyPlan.findByIdAndUpdate(item._id, {
+          status: 'ready',
+          lastClaim: date,
+        });
+      }
+    });
+
+    await Promise.all(updatePromises);
+
+    const updatedPlan = await MyPlan.find({ userId: id }).sort({ _id: -1 });
+    res.json(updatedPlan);
+  } catch (error) {
+    console.error('Error fetching plan', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+
 
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
