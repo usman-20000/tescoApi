@@ -31,6 +31,6 @@ const ScreenShotSchema = new mongoose.Schema({
     },
 }, { timestamps: true });
 
-const ScreenShot = mongoose.model('ScreenShot', ScreenShotSchema);
+const ScreenShots = mongoose.model('ScreenShot', ScreenShotSchema);
 
-module.exports = ScreenShot;
+module.exports = ScreenShots;

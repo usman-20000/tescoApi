@@ -15,7 +15,8 @@ const listing = require('./listing');
 const Chat = require('./chat');
 const MyPlan = require('./MyPlan');
 const { timeDifference } = require('./Data');
-const ScreenShot = require('./Screenshot');
+const ScreenShots = require('./ScreenShots');
+
 
 const PORT = process.env.PORT || 4000;
 
@@ -638,7 +639,7 @@ app.get('/myplan/:id', async (req, res) => {
 
 app.post('/screenshot', async (req, res) => {
   try {
-    const screenshot = new ScreenShot(req.body);
+    const screenshot = new ScreenShots(req.body);
     await screenshot.save();
     res.json(screenshot);
   } catch (error) {
@@ -648,7 +649,7 @@ app.post('/screenshot', async (req, res) => {
 
 app.get('/screenshot', async (req, res) => {
   try {
-    const screenshot = await ScreenShot.find().sort({ _id: -1 });
+    const screenshot = await ScreenShots.find().sort({ _id: -1 });
     res.json(screenshot);
   } catch (error) {
     res.status(500).json({ message: 'Error creating notification' });
@@ -670,7 +671,7 @@ app.patch("/verifyscreenshot/:id", async (req, res) => {
       return res.status(404).send({ message: "User not found" });
     }
 
-    await ScreenShot.findByIdAndUpdate(
+    await ScreenShots.findByIdAndUpdate(
       screenshotId,
       { verify: true },
       { new: true, session }
