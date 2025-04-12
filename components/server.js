@@ -16,6 +16,9 @@ const Chat = require('./chat');
 const MyPlan = require('./MyPlan');
 const { timeDifference } = require('./Data');
 const ScreenShots = require('./ScreenShots');
+const Withdraw = require('./Withdraw');
+const Bank = require('./Bank');
+const History = require('./History');
 
 
 const PORT = process.env.PORT || 4000;
@@ -449,7 +452,7 @@ app.post('/notifications', async (req, res) => {
 app.patch('/notifications/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    const notification = await Notification.findByIdAndUpdate(id, req.body, { new: true });
+    const notification = await Notification.findByIdAndUpdate(id, req.body, { new: true }).sort({ _id: -1 });
     if (!notification) {
       return res.status(404).json({ message: 'Notification not found' });
     }
@@ -639,8 +642,11 @@ app.get('/myplan/:id', async (req, res) => {
 
 app.post('/screenshot', async (req, res) => {
   try {
+    const { payerId, amount } = req.body
     const screenshot = new ScreenShots(req.body);
     await screenshot.save();
+    const history = new History({ userId: payerId, type: 'deposit', amount, requestId: screenshot._id });
+    await history.save();
     res.json(screenshot);
   } catch (error) {
     res.status(500).json({ message: 'Error creating notification' });
@@ -688,7 +694,7 @@ app.patch("/verifyscreenshot/:id", async (req, res) => {
       // Level 1 (8%)
       level1 = await Register.findOneAndUpdate(
         { generatedId: user.referalCode },
-        { $inc: { balance: amount * 8 / 100 } },
+        { $inc: { balance: amount * 8 / 100, totalCommission: amount * 8 / 100 } },
         { new: true, session }
       );
 
@@ -696,7 +702,7 @@ app.patch("/verifyscreenshot/:id", async (req, res) => {
       if (level1?.referalCode) {
         level2 = await Register.findOneAndUpdate(
           { generatedId: level1.referalCode },
-          { $inc: { balance: amount * 3 / 100 } },
+          { $inc: { balance: amount * 3 / 100, totalCommission: amount * 3 / 100 } },
           { new: true, session }
         );
       }
@@ -705,11 +711,21 @@ app.patch("/verifyscreenshot/:id", async (req, res) => {
       if (level2?.referalCode) {
         level3 = await Register.findOneAndUpdate(
           { generatedId: level2.referalCode },
-          { $inc: { balance: amount * 1 / 100 } },
+          { $inc: { balance: amount * 1 / 100, totalCommission: amount * 1 / 100 } },
           { new: true, session }
         );
       }
     }
+
+    await History.findOneAndUpdate({ requestId: screenshotId }, { status: 'complete' }, { new: true, session });
+
+    await new Notification({
+      sender: 'admin',
+      receiver: user._id,
+      heading: 'Deposit Successfully',
+      subHeading: `You have received a deposit of ${amount}`,
+      path: '/'
+    }).save({ session });
 
     await session.commitTransaction();
     session.endSession();
@@ -719,6 +735,230 @@ app.patch("/verifyscreenshot/:id", async (req, res) => {
     await session.abortTransaction();
     session.endSession();
     res.status(400).send({ message: "Error updating user", error: e.message });
+  }
+});
+
+app.get("/mylevels/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const user = await Register.findById(id);
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    // Fetch level1 users based on the generatedId of the user
+    const level1 = await Register.find({ referalCode: user.generatedId });
+
+    // Fetch level2 users based on the generatedId of level1 users
+    const level2 = level1.length > 0
+      ? await Register.find({ referalCode: { $in: level1.map(user => user.generatedId) } })
+      : [];
+
+    // Fetch level3 users based on the generatedId of level2 users
+    const level3 = level2.length > 0
+      ? await Register.find({ referalCode: { $in: level2.map(user => user.generatedId) } })
+      : [];
+
+    res.send({ level1, level2, level3 });
+  } catch (e) {
+    res.status(400).send({ message: "Error fetching levels", error: e.message });
+  }
+});
+
+app.get('/details/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const user = await Register.findById(id);
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    let totalDeposit = 0;
+
+    // Level 1
+    const level1 = await Register.find({ referalCode: user.generatedId });
+    totalDeposit += level1.reduce((acc, u) => acc + u.totalDeposit, 0);
+
+    // Level 2
+    const level2 = await Register.find({
+      referalCode: { $in: level1.map(u => u.generatedId) }
+    });
+    totalDeposit += level2.reduce((acc, u) => acc + u.totalDeposit, 0);
+
+    // Level 3
+    const level3 = await Register.find({
+      referalCode: { $in: level2.map(u => u.generatedId) }
+    });
+    totalDeposit += level3.reduce((acc, u) => acc + u.totalDeposit, 0);
+
+    const plan1 = await MyPlan.find({ planId: '1' });
+    const plan2 = await MyPlan.find({ planId: '2' });
+    const plan3 = await MyPlan.find({ planId: '3' });
+
+    res.send({
+      totalTeamDeposit: totalDeposit,
+      totalTeamCommission: user.totalCommission,
+      totalMembers: level1.length + level2.length + level3.length,
+      level1Commission: user.totalDeposit * 8 / 100,
+      level2Commission: user.totalDeposit * 3 / 100,
+      level3Commission: user.totalDeposit * 1 / 100,
+      plan1: plan1.length,
+      plan2: plan2.length,
+      plan3: plan3.length,
+    });
+
+  } catch (e) {
+    res.status(400).send({
+      message: "Error fetching user details",
+      error: e.message
+    });
+  }
+});
+
+app.post('/withdraw', async (req, res) => {
+  try {
+    const { sender, receiver, amount } = req.body;
+    const newWithdraw = new Withdraw({ sender, receiver, amount });
+    await newWithdraw.save();
+    const history = new History({ userId: sender, type: 'withdraw', amount, requestId: newWithdraw._id });
+    await history.save();
+    res.status(201).json(newWithdraw);
+  } catch (error) {
+    console.error('Error creating withdraw', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.get('/withdraw', async (req, res) => {
+  try {
+    const withdraw = await Withdraw.find().sort({ _id: -1 });
+    res.json(withdraw);
+  } catch (error) {
+    console.error('Error fetching withdraw', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.get('/withdraw/reciever/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const withdraw = await Withdraw.find({ receiver: id }).sort({ _id: -1 });
+    res.json(withdraw);
+  } catch (error) {
+    console.error('Error fetching withdraw', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.post('/bank', async (req, res) => {
+  try {
+    const { userId, bankName, accountName, accountNumber } = req.body;
+    const newBank = new Bank({ userId, bankName, accountName, accountNumber });
+    await newBank.save();
+    res.status(201).json(newBank);
+  } catch (error) {
+    console.error('Error creating bank', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.get('/bank/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const bank = await Bank.findOne({ userId: id });
+    res.json(bank);
+  } catch (error) {
+    console.error('Error getting bank', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.patch('/bank/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updateBank = await Bank.findByIdAndUpdate(id, req.body, { new: true });
+    if (!updateBank) {
+      return res.status(404).json({ message: 'bank not found' });
+    }
+    res.json(updateBank);
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating bank' });
+  }
+});
+
+
+
+app.patch("/verifywithdraw/:id", async (req, res) => {
+  const session = await Withdraw.startSession();
+  session.startTransaction();
+
+  try {
+    const id = req.params.id;
+
+    const withdraw = await Withdraw.findById(id).session(session);
+    if (!withdraw) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    await Withdraw.findByIdAndUpdate(
+      id,
+      { pending: false },
+      { new: true, session }
+    );
+
+    await History.findOneAndUpdate({ requestId: id }, { status: 'complete' }, { new: true, session });
+    await new Notification({
+      sender: 'admin',
+      receiver: withdraw.sender,
+      heading: 'Withdraw Successfully',
+      subHeading: `You have received amount of ${withdraw.amount}`,
+      path: '/'
+    }).save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+    res.status(200).send({ message: "Deposit and referrals updated successfully" });
+
+  } catch (e) {
+    await session.abortTransaction();
+    session.endSession();
+    res.status(400).send({ message: "Error updating user", error: e.message });
+  }
+});
+
+app.post('/history', async (req, res) => {
+  try {
+    const { userId, type, amount } = req.body;
+    const newHistory = new History({ userId, type, amount });
+    await newHistory.save();
+    res.status(201).json(newHistory);
+  } catch (error) {
+    console.error('Error creating history', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.get('/withdraw-history/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const withdrawHistory = await History.find({ userId: id, type: 'withdraw' }).sort({ _id: -1 });
+    res.json(withdrawHistory);
+  } catch (error) {
+    console.error('Error getting bank', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.get('/deposit-history/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const withdrawHistory = await History.find({ userId: id, type: 'deposit' }).sort({ _id: -1 });
+    res.json(withdrawHistory);
+  } catch (error) {
+    console.error('Error getting bank', error);
+    res.status(500).send('Internal Server Error');
   }
 });
 

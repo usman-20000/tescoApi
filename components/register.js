@@ -41,8 +41,12 @@ const registerSchema = new mongoose.Schema({
   totalWithdraw: {
     type: Number,
     default: 0
-  }
-});
+  },
+  totalCommission: {
+    type: Number,
+    default: 0
+  },
+},{timestamps: true});
 
 const Register = mongoose.model('Register', registerSchema);
 
