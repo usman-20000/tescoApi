@@ -1015,7 +1015,16 @@ app.get('/deposit-history/:id', async (req, res) => {
 });
 
 
-
+app.get('/last-withdraw/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const withdraw = await Withdraw.findOne({ sender: id }).sort({ _id: -1 });
+    res.json(withdraw);
+  } catch (error) {
+    console.error('Error getting getting withdraw', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
