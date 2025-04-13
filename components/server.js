@@ -411,7 +411,6 @@ app.get('/register', async (req, res) => {
 
 app.get('/register/:id', async (req, res) => {
   try {
-
     const id = req.params.id;
     const register = await Register.findById(id);
     res.json(register);
@@ -510,6 +509,43 @@ app.post('/addPlan/:id', async (req, res) => {
       { new: true, session }
     );
 
+    let level1, level2, level3;
+
+    if (user.referalCode) {
+      // Level 1 (8%)
+      level1 = await Register.findOneAndUpdate(
+        { generatedId: user.referalCode },
+        { $inc: { balance: investment * 8 / 100, totalCommission: investment * 8 / 100 } },
+        { new: true, session }
+      );
+
+      // Level 2 (3%)
+      if (level1?.referalCode) {
+        level2 = await Register.findOneAndUpdate(
+          { generatedId: level1.referalCode },
+          { $inc: { balance: investment * 3.5 / 100, totalCommission: investment * 3 / 100 } },
+          { new: true, session }
+        );
+      }
+
+      // Level 3 (1%)
+      if (level2?.referalCode) {
+        level3 = await Register.findOneAndUpdate(
+          { generatedId: level2.referalCode },
+          { $inc: { balance: investment * 1.5 / 100, totalCommission: investment * 1 / 100 } },
+          { new: true, session }
+        );
+      }
+    }
+
+    await new Notification({
+      sender: 'admin',
+      receiver: user._id,
+      heading: 'Plan Activated',
+      subHeading: `You have activated a plan with amount ${investment}`,
+      path: '/'
+    }).save({ session });
+
     const newPlan = new MyPlan({
       planId,
       userId: id,
@@ -529,9 +565,10 @@ app.post('/addPlan/:id', async (req, res) => {
     await session.abortTransaction();
     session.endSession();
     console.error('Transaction error:', error);
-    res.status(500).json({ message: 'Error creating plan' });
+    res.status(500).json({ message: 'Error creating plan', error: error.message });
   }
 });
+
 
 app.patch("/myplan/:id", async (req, res) => {
   try {
@@ -689,34 +726,6 @@ app.patch("/verifyscreenshot/:id", async (req, res) => {
       { new: true, session }
     );
 
-    let level1, level2, level3;
-    if (user.referalCode) {
-      // Level 1 (8%)
-      level1 = await Register.findOneAndUpdate(
-        { generatedId: user.referalCode },
-        { $inc: { balance: amount * 8 / 100, totalCommission: amount * 8 / 100 } },
-        { new: true, session }
-      );
-
-      // Level 2 (3%)
-      if (level1?.referalCode) {
-        level2 = await Register.findOneAndUpdate(
-          { generatedId: level1.referalCode },
-          { $inc: { balance: amount * 3 / 100, totalCommission: amount * 3 / 100 } },
-          { new: true, session }
-        );
-      }
-
-      // Level 3 (1%)
-      if (level2?.referalCode) {
-        level3 = await Register.findOneAndUpdate(
-          { generatedId: level2.referalCode },
-          { $inc: { balance: amount * 1 / 100, totalCommission: amount * 1 / 100 } },
-          { new: true, session }
-        );
-      }
-    }
-
     await History.findOneAndUpdate({ requestId: screenshotId }, { status: 'complete' }, { new: true, session });
 
     await new Notification({
@@ -769,39 +778,48 @@ app.get('/details/:id', async (req, res) => {
   try {
     const id = req.params.id;
     const user = await Register.findById(id);
+
     if (!user) {
       return res.status(404).send({ message: "User not found" });
     }
 
-    let totalDeposit = 0;
+    let totalTeamDeposit = 0;
 
     // Level 1
     const level1 = await Register.find({ referalCode: user.generatedId });
-    totalDeposit += level1.reduce((acc, u) => acc + u.totalDeposit, 0);
+    const level1TotalDeposit = level1.reduce((acc, u) => acc + (u.totalDeposit || 0), 0);
+    const level1TotalInvest = level1.reduce((acc, u) => acc + (u.totalInvest || 0), 0);
+    totalTeamDeposit += level1TotalDeposit;
 
     // Level 2
     const level2 = await Register.find({
       referalCode: { $in: level1.map(u => u.generatedId) }
     });
-    totalDeposit += level2.reduce((acc, u) => acc + u.totalDeposit, 0);
+    const level2TotalDeposit = level2.reduce((acc, u) => acc + (u.totalDeposit || 0), 0);
+    const level2TotalInvest = level2.reduce((acc, u) => acc + (u.totalInvest || 0), 0);
+    totalTeamDeposit += level2TotalDeposit;
 
     // Level 3
     const level3 = await Register.find({
       referalCode: { $in: level2.map(u => u.generatedId) }
     });
-    totalDeposit += level3.reduce((acc, u) => acc + u.totalDeposit, 0);
+    const level3TotalDeposit = level3.reduce((acc, u) => acc + (u.totalDeposit || 0), 0);
+    const level3TotalInvest = level3.reduce((acc, u) => acc + (u.totalInvest || 0), 0);
+    totalTeamDeposit += level3TotalDeposit;
 
-    const plan1 = await MyPlan.find({ planId: '1' });
-    const plan2 = await MyPlan.find({ planId: '2' });
-    const plan3 = await MyPlan.find({ planId: '3' });
+    const [plan1, plan2, plan3] = await Promise.all([
+      MyPlan.find({ planId: '1' }),
+      MyPlan.find({ planId: '2' }),
+      MyPlan.find({ planId: '3' })
+    ]);
 
     res.send({
-      totalTeamDeposit: totalDeposit,
-      totalTeamCommission: user.totalCommission,
+      totalTeamDeposit,
+      totalTeamCommission: user.totalCommission || 0,
       totalMembers: level1.length + level2.length + level3.length,
-      level1Commission: user.totalDeposit * 8 / 100,
-      level2Commission: user.totalDeposit * 3 / 100,
-      level3Commission: user.totalDeposit * 1 / 100,
+      level1Commission: (level1TotalInvest * 8) / 100,
+      level2Commission: (level2TotalInvest * 3.5) / 100,
+      level3Commission: (level3TotalInvest * 1.5) / 100,
       plan1: plan1.length,
       plan2: plan2.length,
       plan3: plan3.length,
@@ -814,6 +832,7 @@ app.get('/details/:id', async (req, res) => {
     });
   }
 });
+
 
 app.post('/withdraw', async (req, res) => {
   try {
@@ -905,6 +924,17 @@ app.patch("/verifywithdraw/:id", async (req, res) => {
     await Withdraw.findByIdAndUpdate(
       id,
       { pending: false },
+      { new: true, session }
+    );
+
+    await Register.findByIdAndUpdate(
+      withdraw.sender,
+      {
+        $inc: {
+          balance: -withdraw.amount,
+          totalWithdraw: withdraw.amount - (withdraw.amount * 2 / 100),
+        },
+      },
       { new: true, session }
     );
 
