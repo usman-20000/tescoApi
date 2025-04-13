@@ -619,12 +619,6 @@ app.patch("/dailyclaim/:id", async (req, res) => {
     );
 
     if (date >= plan.endDate) {
-      await Register.findByIdAndUpdate(
-        id,
-        { $inc: { balance: plan.investment } },
-        { new: true, session }
-      );
-
       await MyPlan.findByIdAndUpdate(
         planId,
         { status: 'complete' },
@@ -637,6 +631,14 @@ app.patch("/dailyclaim/:id", async (req, res) => {
         { new: true, session }
       );
     }
+
+    await new Notification({
+      sender: 'admin',
+      receiver: user._id,
+      heading: 'Claim',
+      subHeading: `You have successfully claimed your daily profit of ${plan.dailyProfit}`,
+      path: '/'
+    }).save({ session });
 
     await session.commitTransaction();
     session.endSession();
@@ -807,10 +809,20 @@ app.get('/details/:id', async (req, res) => {
     const level3TotalInvest = level3.reduce((acc, u) => acc + (u.totalInvest || 0), 0);
     totalTeamDeposit += level3TotalDeposit;
 
-    const [plan1, plan2, plan3] = await Promise.all([
+    const [plan1, plan2, plan3, plan4, plan5, plan6, plan7, plan8, plan9, plan10, plan11, plan12, plan13] = await Promise.all([
       MyPlan.find({ planId: '1' }),
       MyPlan.find({ planId: '2' }),
-      MyPlan.find({ planId: '3' })
+      MyPlan.find({ planId: '3' }),
+      MyPlan.find({ planId: '4' }),
+      MyPlan.find({ planId: '5' }),
+      MyPlan.find({ planId: '6' }),
+      MyPlan.find({ planId: '7' }),
+      MyPlan.find({ planId: '8' }),
+      MyPlan.find({ planId: '9' }),
+      MyPlan.find({ planId: '10' }),
+      MyPlan.find({ planId: '11' }),
+      MyPlan.find({ planId: '12' }),
+      MyPlan.find({ planId: '13' }),
     ]);
 
     res.send({
@@ -823,6 +835,16 @@ app.get('/details/:id', async (req, res) => {
       plan1: plan1.length,
       plan2: plan2.length,
       plan3: plan3.length,
+      plan4: plan4.length,
+      plan5: plan5.length,
+      plan6: plan6.length,
+      plan7: plan7.length,
+      plan8: plan8.length,
+      plan9: plan9.length,
+      plan10: plan10.length,
+      plan11: plan11.length,
+      plan12: plan12.length,
+      plan13: plan13.length,
     });
 
   } catch (e) {
@@ -991,6 +1013,8 @@ app.get('/deposit-history/:id', async (req, res) => {
     res.status(500).send('Internal Server Error');
   }
 });
+
+
 
 
 app.listen(PORT, () => {
