@@ -46,7 +46,10 @@ const registerSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-},{timestamps: true});
+  profileImage: {
+    type: String,
+  }
+}, { timestamps: true });
 
 const Register = mongoose.model('Register', registerSchema);
 
