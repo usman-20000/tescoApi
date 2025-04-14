@@ -1026,6 +1026,54 @@ app.get('/last-withdraw/:id', async (req, res) => {
   }
 });
 
+app.patch("/edit-password/:email", async (req, res) => {
+  try {
+    const { email } = req.params;
+    let updateData = req.body;
+
+    // If the request includes a new password
+    if (updateData.password) {
+      // Fetch the user first
+      const existingUser = await Register.findOne({ email });
+
+      if (!existingUser) {
+        return res.status(404).send({ message: "User not found" });
+      }
+
+      // If an old password is provided, verify it
+      if (updateData.oldPassword) {
+        const isMatch = await bcrypt.compare(updateData.oldPassword, existingUser.password);
+        if (!isMatch) {
+          return res.status(401).send({ message: "Old password is incorrect" });
+        }
+      }
+
+      // Hash the new password
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(updateData.password, saltRounds);
+      updateData.password = hashedPassword;
+
+      // Remove oldPassword from the update payload
+      delete updateData.oldPassword;
+    }
+
+    // Update the user with new data
+    const updatedUser = await Register.findOneAndUpdate({ email }, updateData, {
+      new: true,
+    });
+
+    if (!updatedUser) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    res.status(200).send(updatedUser);
+  } catch (e) {
+    console.error(e);
+    res.status(500).send({ message: "Error updating user", error: e.message });
+  }
+});
+
+
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
