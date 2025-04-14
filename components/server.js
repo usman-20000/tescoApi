@@ -827,7 +827,7 @@ app.get('/details/:id', async (req, res) => {
 
     res.send({
       totalTeamDeposit,
-      totalTeamCommission: user.totalCommission || 0,
+      totalTeamCommission: (level1TotalInvest * 8) / 100 + (level2TotalInvest * 3.5) / 100 + (level3TotalInvest * 1.5) / 100 || 0,
       totalMembers: level1.length + level2.length + level3.length,
       level1Commission: (level1TotalInvest * 8) / 100,
       level2Commission: (level2TotalInvest * 3.5) / 100,
