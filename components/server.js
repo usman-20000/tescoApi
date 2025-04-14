@@ -519,22 +519,44 @@ app.post('/addPlan/:id', async (req, res) => {
         { new: true, session }
       );
 
+      await new Notification({
+        sender: 'admin',
+        receiver: level1._id,
+        heading: 'Plan Activated',
+        subHeading: `You have got commission of ${investment * 8 / 100}`,
+        path: '/'
+      }).save({ session });
+
       // Level 2 (3%)
       if (level1?.referalCode) {
         level2 = await Register.findOneAndUpdate(
           { generatedId: level1.referalCode },
-          { $inc: { balance: investment * 3.5 / 100, totalCommission: investment * 3 / 100 } },
+          { $inc: { balance: investment * 3.5 / 100, totalCommission: investment * 3.5 / 100 } },
           { new: true, session }
         );
-      }
 
+        await new Notification({
+          sender: 'admin',
+          receiver: level2._id,
+          heading: 'Plan Activated',
+          subHeading: `You have got commission of ${investment * 3.5 / 100}`,
+          path: '/'
+        }).save({ session });
+      }
       // Level 3 (1%)
       if (level2?.referalCode) {
         level3 = await Register.findOneAndUpdate(
           { generatedId: level2.referalCode },
-          { $inc: { balance: investment * 1.5 / 100, totalCommission: investment * 1 / 100 } },
+          { $inc: { balance: investment * 1.5 / 100, totalCommission: investment * 1.5 / 100 } },
           { new: true, session }
         );
+        await new Notification({
+          sender: 'admin',
+          receiver: level3._id,
+          heading: 'Plan Activated',
+          subHeading: `You have got commission of ${investment * 1.5 / 100}`,
+          path: '/'
+        }).save({ session });
       }
     }
 
