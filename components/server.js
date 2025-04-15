@@ -461,6 +461,19 @@ app.patch('/notifications/:id', async (req, res) => {
   }
 });
 
+app.patch('/notifications/all-seen/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const notification = await Notification.updateMany({ receiver: id }, req.body, { new: true });
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+    res.json(notification);
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating notification' });
+  }
+});
+
 app.get('/notifications/receiver/:id', async (req, res) => {
   try {
     const id = req.params.id;
