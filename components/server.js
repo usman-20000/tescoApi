@@ -726,7 +726,7 @@ app.get('/screenshot', async (req, res) => {
 app.get('/screenshot/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    const screenshot = await History.findById(id);
+    const screenshot = await ScreenShots.findById(id);
     res.json(screenshot);
   } catch (error) {
     res.status(500).json({ message: 'Error creating notification' });
@@ -916,7 +916,7 @@ app.get('/withdraw', async (req, res) => {
 app.get('/withdraw/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    const withdraw = await History.findById(id);
+    const withdraw = await Withdraw.findById(id);
     res.json(withdraw);
   } catch (error) {
     console.error('Error fetching withdraw', error);
