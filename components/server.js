@@ -464,7 +464,7 @@ app.patch('/notifications/:id', async (req, res) => {
 app.get('/notifications/receiver/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    const notifications = await Notification.find({ receiver: id });
+    const notifications = await Notification.find({ receiver: id }).sort({ _id: -1 });
     res.json(notifications);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching notifications' });
@@ -723,6 +723,17 @@ app.get('/screenshot', async (req, res) => {
   }
 });
 
+app.get('/screenshot/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const screenshot = await ScreenShots.findById(id);
+    res.json(screenshot);
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating notification' });
+  }
+});
+
+
 app.patch("/verifyscreenshot/:id", async (req, res) => {
   const session = await Register.startSession();
   session.startTransaction();
@@ -895,6 +906,17 @@ app.post('/withdraw', async (req, res) => {
 app.get('/withdraw', async (req, res) => {
   try {
     const withdraw = await Withdraw.find().sort({ _id: -1 });
+    res.json(withdraw);
+  } catch (error) {
+    console.error('Error fetching withdraw', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.get('/withdraw/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const withdraw = await Withdraw.findById(id);
     res.json(withdraw);
   } catch (error) {
     console.error('Error fetching withdraw', error);
