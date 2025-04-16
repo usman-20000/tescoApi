@@ -18,7 +18,7 @@ const ScreenShots = require('./ScreenShots');
 const Withdraw = require('./Withdraw');
 const Bank = require('./Bank');
 const History = require('./History');
-const MyPlan = require('./myplan');
+const MyPlan = require('./MyPlan');
 const Plan = require('./Plan');
 
 
