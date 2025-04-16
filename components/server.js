@@ -13,12 +13,13 @@ const Bill = require('./bill');
 const Notification = require('./Notification');
 const listing = require('./listing');
 const Chat = require('./chat');
-const MyPlan = require('./MyPlan');
 const { timeDifference } = require('./Data');
 const ScreenShots = require('./ScreenShots');
 const Withdraw = require('./Withdraw');
 const Bank = require('./Bank');
 const History = require('./History');
+const MyPlan = require('./myplan');
+const Plan = require('./Plan');
 
 
 const PORT = process.env.PORT || 4000;
@@ -1129,6 +1130,60 @@ app.patch("/edit-password/:email", async (req, res) => {
     res.status(500).send({ message: "Error updating user", error: e.message });
   }
 });
+
+
+app.get("/active-users", async (req, res) => {
+  try {
+    const plan = await MyPlan.find();
+    const uniqueUserIds = new Set(plan.map(item => item.userId));
+    const idsArray = Array.from(uniqueUserIds); // Convert Set to Array
+    res.send({ data: idsArray });
+  } catch (e) {
+    res.status(400).send({ message: "Error fetching plan", error: e.message });
+  }
+});
+
+app.post('/plan', async (req, res) => {
+  try {
+    const { id, image, name, days, profit, amount, lock } = req.body;
+    const newPlan = new Plan({ id, image, name, days, profit, amount, lock });
+    await newPlan.save();
+    res.status(201).json(newPlan);
+  } catch (error) {
+    console.error('Error creating plan', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.get('/plan', async (req, res) => {
+  try {
+    const plans = await Plan.find(); // use a different variable name
+    res.status(200).json(plans);
+  } catch (error) {
+    console.error('Error fetching plans:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+app.patch('/plan/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updatedPlan = await Plan.findByIdAndUpdate(id, req.body, {
+      new: true, // returns the updated document
+    });
+
+    if (!updatedPlan) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    res.status(200).json(updatedPlan);
+  } catch (error) {
+    console.error('Error updating plan:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 
 
 app.listen(PORT, () => {

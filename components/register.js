@@ -48,6 +48,10 @@ const registerSchema = new mongoose.Schema({
   },
   profileImage: {
     type: String,
+  },
+  ban:{
+    type: Boolean,
+    default: false
   }
 }, { timestamps: true });
 
