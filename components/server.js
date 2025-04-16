@@ -20,6 +20,7 @@ const Bank = require('./Bank');
 const History = require('./History');
 const MyPlan = require('./MyPlan');
 const Plan = require('./Plan');
+const Promo = require('./Promo');
 
 
 const PORT = process.env.PORT || 4000;
@@ -952,6 +953,12 @@ app.get('/withdraw/reciever/:id', async (req, res) => {
 app.post('/bank', async (req, res) => {
   try {
     const { userId, bankName, accountName, accountNumber } = req.body;
+
+    const bankExist = await Bank.findOne({ accountNumber });
+    if (bankExist) {
+      return res.status(400).json({ message: 'Bank account already exists' });
+    }
+
     const newBank = new Bank({ userId, bankName, accountName, accountNumber });
     await newBank.save();
     res.status(201).json(newBank);
@@ -975,15 +982,27 @@ app.get('/bank/:id', async (req, res) => {
 app.patch('/bank/:id', async (req, res) => {
   try {
     const id = req.params.id;
+    const { accountNumber } = req.body;
+
+    if (accountNumber) {
+      const bankExist = await Bank.findOne({ accountNumber, _id: { $ne: id } });
+      if (bankExist) {
+        return res.status(400).json({ message: 'Bank account already exists' });
+      }
+    }
+
     const updateBank = await Bank.findByIdAndUpdate(id, req.body, { new: true });
     if (!updateBank) {
-      return res.status(404).json({ message: 'bank not found' });
+      return res.status(404).json({ message: 'Bank not found' });
     }
+
     res.json(updateBank);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: 'Error updating bank' });
   }
 });
+
 
 
 
@@ -1157,7 +1176,7 @@ app.post('/plan', async (req, res) => {
 
 app.get('/plan', async (req, res) => {
   try {
-    const plans = await Plan.find(); // use a different variable name
+    const plans = await Plan.find();
     res.status(200).json(plans);
   } catch (error) {
     console.error('Error fetching plans:', error);
@@ -1183,6 +1202,142 @@ app.patch('/plan/:id', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
+app.post('/promo', async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    const uniqueId = await generateUniqueId();
+
+    const promoExists = await Promo.findOne({ code: uniqueId });
+    if (promoExists) {
+      return res.status(400).json({ message: 'Promo code already exists' });
+    }
+
+    const promo = new Promo({ code: uniqueId, amount });
+    await promo.save();
+
+    res.status(201).json(promo);
+  } catch (error) {
+    console.error('Error creating promo:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/promo', async (req, res) => {
+  try {
+    const promos = await Promo.find();
+    res.json(promos);
+  } catch (error) {
+    console.error('Error fetching promos:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.patch('/promo/claim/:code', async (req, res) => {
+  const session = await mongoose.startSession(); // Start a new session
+  session.startTransaction(); // Start the transaction
+
+  try {
+    const { code } = req.params;
+    const { userId, name } = req.body;
+
+    const havePlan = await MyPlan.find({ userId });
+    if (havePlan.length === 1 && havePlan[0].investment === 0 || havePlan.length === 0) {
+      return res.status(404).json({ message: 'Cannot claim promo' });
+    }
+    // Find promo by code
+    const promo = await Promo.findOne({ code }).session(session);
+    if (!promo) {
+      return res.status(404).json({ message: 'Promo not found' });
+    }
+
+    // Check if the promo has already been claimed by the user
+    const alreadyClaimed = promo.claimBy.some(claim => claim.userId.toString() === userId);
+    if (alreadyClaimed) {
+      return res.status(400).json({ message: 'User already claimed this promo' });
+    }
+
+    // Update the user's balance
+    const user = await Register.findByIdAndUpdate(
+      userId,
+      { $inc: { balance: promo.amount } },
+      { new: true, session }
+    );
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Save the notification about the promo claim
+    await new Notification({
+      sender: 'admin',
+      receiver: userId,
+      heading: 'Promo Claimed',
+      subHeading: `You have successfully claimed your promo code reward of ${promo.amount} Rs.`,
+      path: '/'
+    }).save({ session });
+
+    // Add the user to the promo claim list
+    promo.claimBy.push({ userId, name });
+    await promo.save({ session });
+
+    // Commit the transaction
+    await session.commitTransaction();
+    session.endSession();
+
+    res.json({ message: 'Promo claimed successfully', promo });
+  } catch (error) {
+    // Rollback transaction in case of error
+    await session.abortTransaction();
+    session.endSession();
+
+    console.error('Error claiming promo:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
+app.get('/promo/today-claims', async (req, res) => {
+  try {
+    // Get today's start and end
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // Get all promos that have at least one claim today
+    const promos = await Promo.find({
+      claimBy: {
+        $elemMatch: {
+          claimedAt: {
+            $gte: startOfDay,
+            $lte: endOfDay
+          }
+        }
+      }
+    });
+
+    // Optionally filter each promo's claimBy array to only today's claims
+    const filteredPromos = promos.map(promo => {
+      const todayClaims = promo.claimBy.filter(claim => {
+        return claim.claimedAt >= startOfDay && claim.claimedAt <= endOfDay;
+      });
+
+      return {
+        ...promo.toObject(),
+        claimBy: todayClaims
+      };
+    });
+
+    res.json(filteredPromos);
+  } catch (error) {
+    console.error('Error fetching today\'s claims:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 
 
 
