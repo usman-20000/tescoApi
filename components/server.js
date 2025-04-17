@@ -1431,9 +1431,8 @@ app.patch('/promo/claim/:code', async (req, res) => {
 });
 
 
-app.get('/promo/today-claims', async (req, res) => {
+app.get('/promo/today-claim', async (req, res) => {
   try {
-    // Get today's start and end
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -1443,32 +1442,30 @@ app.get('/promo/today-claims', async (req, res) => {
     const promos = await Promo.find({
       claimBy: {
         $elemMatch: {
-          claimedAt: {
-            $gte: startOfDay,
-            $lte: endOfDay
-          }
+          claimedAt: { $gte: startOfDay, $lte: endOfDay }
         }
       }
     });
 
-    const filteredPromos = promos.map(promo => {
-      const todayClaims = promo.claimBy.filter(claim => {
-        return claim.claimedAt >= startOfDay && claim.claimedAt <= endOfDay;
-      });
+    const claimedToday = [];
 
-      return {
-        ...promo.toObject(),
-        claimBy: todayClaims
-      };
+    promos.forEach(promo => {
+      promo.claimBy.forEach(claim => {
+        if (claim.claimedAt >= startOfDay && claim.claimedAt <= endOfDay) {
+          claimedToday.push({
+            name: claim.name,
+            amount: promo.amount
+          });
+        }
+      });
     });
 
-    res.json(filteredPromos);
+    res.json(claimedToday);
   } catch (error) {
     console.error('Error fetching today\'s claims:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
-
 
 
 
