@@ -10,6 +10,10 @@ const promoSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  limit:{
+    type: Number,
+    required: true
+  },
   claimBy: [
     {
       userId: {

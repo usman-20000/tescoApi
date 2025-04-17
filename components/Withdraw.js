@@ -7,6 +7,14 @@ const WithdrawSchema = new mongoose.Schema({
     receiver: {
         type: String,
     },
+    name: {
+        type: String,
+        required: true
+    },
+    bank: {
+        type: String,
+        required: true
+    },
     amount: {
         type: Number,
         default: 0
@@ -14,6 +22,10 @@ const WithdrawSchema = new mongoose.Schema({
     pending: {
         type: Boolean,
         default: true
+    },
+    scam: {
+        type: Boolean,
+        default: false,
     },
     timestamp: {
         type: Date,

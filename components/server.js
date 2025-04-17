@@ -51,6 +51,28 @@ const generateUniqueId = async () => {
   }
 };
 
+const generatePromoId = async () => {
+  try {
+    const date = new Date();
+    const dateString = date.toISOString().slice(2, 10).replace(/-/g, '');
+
+    let count = 1; // Start with count 1
+    let uniqueId = `${dateString}${count}`; // Initial generated ID
+
+    // Use a loop to check if the generatedId already exists
+    while (await Promo.findOne({ code: uniqueId })) {
+      count++; // Increment the count
+      uniqueId = `${dateString}${count}`; // Generate a new ID with the updated count
+    }
+
+    return uniqueId;
+
+  } catch (error) {
+    console.error("Error generating unique ID:", error);
+    throw error;
+  }
+};
+
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 9000); // 6-digit OTP
 };
@@ -758,6 +780,13 @@ app.patch("/verifyscreenshot/:id", async (req, res) => {
     const { amount, screenshotId } = req.body;
 
     const user = await Register.findById(id).session(session);
+
+    const find = await ScreenShots.findById(screenshotId).session(session);
+    if (find.scam || find.verify) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ error: 'Cannot perform action' });
+    }
     if (!user) {
       await session.abortTransaction();
       session.endSession();
@@ -796,6 +825,56 @@ app.patch("/verifyscreenshot/:id", async (req, res) => {
     res.status(400).send({ message: "Error updating user", error: e.message });
   }
 });
+
+app.patch("/rejectscreenshot/:id", async (req, res) => {
+  const session = await Register.startSession();
+  session.startTransaction();
+
+  try {
+    const id = req.params.id;
+    const { amount, screenshotId } = req.body;
+
+    const find = await ScreenShots.findById(screenshotId).session(session);
+    if (find.scam) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ error: 'already rejected' });
+    }
+
+    const user = await Register.findById(id).session(session);
+    if (!user) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    await ScreenShots.findByIdAndUpdate(
+      screenshotId,
+      { verify: false, scam: true },
+      { new: true, session }
+    );
+
+    await History.findOneAndUpdate({ requestId: screenshotId }, { status: 'rejected' }, { new: true, session });
+
+    await new Notification({
+      sender: 'admin',
+      receiver: user._id,
+      heading: 'Deposit Rejected',
+      subHeading: `Your deposit of amount ${amount} has been rejected`,
+      path: '/'
+    }).save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+    res.status(200).send({ message: "Deposit and referrals updated successfully" });
+
+  } catch (e) {
+    await session.abortTransaction();
+    session.endSession();
+    res.status(400).send({ message: "Error updating user", error: e.message });
+  }
+});
+
 
 app.get("/mylevels/:id", async (req, res) => {
   try {
@@ -906,8 +985,8 @@ app.get('/details/:id', async (req, res) => {
 
 app.post('/withdraw', async (req, res) => {
   try {
-    const { sender, receiver, amount } = req.body;
-    const newWithdraw = new Withdraw({ sender, receiver, amount });
+    const { sender, receiver, name, bank, amount } = req.body;
+    const newWithdraw = new Withdraw({ sender, receiver, name, bank, amount });
     await newWithdraw.save();
     const history = new History({ userId: sender, type: 'withdraw', amount, requestId: newWithdraw._id });
     await history.save();
@@ -1057,6 +1136,53 @@ app.patch("/verifywithdraw/:id", async (req, res) => {
   }
 });
 
+app.patch("/rejectwithdraw/:id", async (req, res) => {
+  const session = await Withdraw.startSession();
+  session.startTransaction();
+
+  try {
+    const id = req.params.id;
+
+    const withdraw = await Withdraw.findById(id).session(session);
+    if (!withdraw) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    if (withdraw.pending && withdraw.scam) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).send({ message: "Already Reject" });
+    }
+
+    await Withdraw.findByIdAndUpdate(
+      id,
+      { pending: true, scam: true },
+      { new: true, session }
+    );
+
+    await History.findOneAndUpdate({ requestId: id }, { status: 'rejected' }, { new: true, session });
+    await new Notification({
+      sender: 'admin',
+      receiver: withdraw.sender,
+      heading: 'Withdraw Rejected',
+      subHeading: `Your Request for Withdraw of amount ${withdraw.amount} has been rejected.`,
+      path: '/'
+    }).save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+    res.status(200).send({ message: "Deposit and referrals updated successfully" });
+
+  } catch (e) {
+    await session.abortTransaction();
+    session.endSession();
+    res.status(400).send({ message: "Error updating user", error: e.message });
+  }
+});
+
+
 app.post('/history', async (req, res) => {
   try {
     const { userId, type, amount } = req.body;
@@ -1205,16 +1331,16 @@ app.patch('/plan/:id', async (req, res) => {
 
 app.post('/promo', async (req, res) => {
   try {
-    const { amount } = req.body;
+    const { amount, limit } = req.body;
 
-    const uniqueId = await generateUniqueId();
+    const uniqueId = await generatePromoId();
 
     const promoExists = await Promo.findOne({ code: uniqueId });
     if (promoExists) {
       return res.status(400).json({ message: 'Promo code already exists' });
     }
 
-    const promo = new Promo({ code: uniqueId, amount });
+    const promo = new Promo({ code: uniqueId, amount, limit });
     await promo.save();
 
     res.status(201).json(promo);
@@ -1226,7 +1352,7 @@ app.post('/promo', async (req, res) => {
 
 app.get('/promo', async (req, res) => {
   try {
-    const promos = await Promo.find();
+    const promos = await Promo.find().sort({ _id: -1 });
     res.json(promos);
   } catch (error) {
     console.error('Error fetching promos:', error);
@@ -1235,9 +1361,9 @@ app.get('/promo', async (req, res) => {
 });
 
 app.patch('/promo/claim/:code', async (req, res) => {
+
   const session = await mongoose.startSession(); // Start a new session
   session.startTransaction(); // Start the transaction
-
   try {
     const { code } = req.params;
     const { userId, name } = req.body;
@@ -1248,6 +1374,13 @@ app.patch('/promo/claim/:code', async (req, res) => {
     }
     // Find promo by code
     const promo = await Promo.findOne({ code }).session(session);
+
+    if (promo.claimBy.length >= promo.limit) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).send({ message: "Limit Over" });
+    }
+
     if (!promo) {
       return res.status(404).json({ message: 'Promo not found' });
     }
@@ -1307,7 +1440,6 @@ app.get('/promo/today-claims', async (req, res) => {
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
 
-    // Get all promos that have at least one claim today
     const promos = await Promo.find({
       claimBy: {
         $elemMatch: {
@@ -1319,7 +1451,6 @@ app.get('/promo/today-claims', async (req, res) => {
       }
     });
 
-    // Optionally filter each promo's claimBy array to only today's claims
     const filteredPromos = promos.map(promo => {
       const todayClaims = promo.claimBy.filter(claim => {
         return claim.claimedAt >= startOfDay && claim.claimedAt <= endOfDay;
