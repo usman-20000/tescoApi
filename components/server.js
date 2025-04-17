@@ -54,15 +54,24 @@ const generateUniqueId = async () => {
 const generatePromoId = async () => {
   try {
     const date = new Date();
-    const dateString = date.toISOString().slice(2, 10).replace(/-/g, '');
+    const dateString = date.toISOString().slice(2, 10).replace(/-/g, ''); // e.g., 250417
 
-    let count = 1; // Start with count 1
-    let uniqueId = `${dateString}${count}`; // Initial generated ID
+    let count = 1;
 
-    // Use a loop to check if the generatedId already exists
+    const getRandomLetters = (length = 3) => {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      let result = '';
+      for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    };
+
+    let uniqueId = `${dateString}${getRandomLetters()}${count}`;
+
     while (await Promo.findOne({ code: uniqueId })) {
-      count++; // Increment the count
-      uniqueId = `${dateString}${count}`; // Generate a new ID with the updated count
+      count++;
+      uniqueId = `${dateString}${getRandomLetters()}${count}`;
     }
 
     return uniqueId;
@@ -72,6 +81,7 @@ const generatePromoId = async () => {
     throw error;
   }
 };
+
 
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 9000); // 6-digit OTP
@@ -1464,6 +1474,35 @@ app.get('/promo/today-claim', async (req, res) => {
   } catch (error) {
     console.error('Error fetching today\'s claims:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
+app.get('/total-withdraw', async (req, res) => {
+  try {
+    const totalWithdraw = await Withdraw.aggregate([
+      { $match: { pending: false } }, 
+      { $group: { _id: null, totalAmount: { $sum: "$amount" } } }
+    ]);
+
+    const total = totalWithdraw[0]?.totalAmount || 0;
+    res.status(200).json({ success: true, totalWithdraw: total });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Server Error", error });
+  }
+});
+
+app.get('/total-deposit', async (req, res) => {
+  try {
+    const totalWithdraw = await ScreenShots.aggregate([
+      { $match: { verify: true } }, 
+      { $group: { _id: null, totalAmount: { $sum: "$amount" } } }
+    ]);
+
+    const total = totalWithdraw[0]?.totalAmount || 0;
+    res.status(200).json({ success: true, totalWithdraw: total });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Server Error", error });
   }
 });
 

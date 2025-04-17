@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const promoSchema = new mongoose.Schema({
   code: {
-    type: Number,
+    type: String,
     required: true,
     unique: true
   },
