@@ -21,6 +21,7 @@ const History = require('./History');
 const MyPlan = require('./MyPlan');
 const Plan = require('./Plan');
 const Promo = require('./Promo');
+const Commission = require('./Commission');
 
 
 const PORT = process.env.PORT || 4000;
@@ -1481,7 +1482,7 @@ app.get('/promo/today-claim', async (req, res) => {
 app.get('/total-withdraw', async (req, res) => {
   try {
     const totalWithdraw = await Withdraw.aggregate([
-      { $match: { pending: false } }, 
+      { $match: { pending: false } },
       { $group: { _id: null, totalAmount: { $sum: "$amount" } } }
     ]);
 
@@ -1495,7 +1496,7 @@ app.get('/total-withdraw', async (req, res) => {
 app.get('/total-deposit', async (req, res) => {
   try {
     const totalWithdraw = await ScreenShots.aggregate([
-      { $match: { verify: true } }, 
+      { $match: { verify: true } },
       { $group: { _id: null, totalAmount: { $sum: "$amount" } } }
     ]);
 
@@ -1506,7 +1507,47 @@ app.get('/total-deposit', async (req, res) => {
   }
 });
 
+app.post('/commission', async (req, res) => {
+  try {
+    const { status, level1, level2, level3 } = req.body;
 
+    const newCommission = new Commission({ status, level1, level2, level3 });
+    await newCommission.save();
+
+    res.status(201).json(newCommission);
+  } catch (error) {
+    console.error('Error creating Commission:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/commission/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const commission = await Commission.findById(id);
+    res.status(200).json(commission);
+  } catch (error) {
+    console.error('Error fetching commission:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+app.patch('/commission/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updateCommission = await Commission.findByIdAndUpdate(id, req.body, {
+      new: true,
+    });
+    if (!updateCommission) {
+      return res.status(404).json({ message: 'Commission not found' });
+    }
+    res.status(200).json(updateCommission);
+  } catch (error) {
+    console.error('Error updating Commission:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
